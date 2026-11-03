@@ -13,6 +13,10 @@ for chart_yaml in "$root"/charts/*/Chart.yaml; do
   chart="$(basename "$chart_dir")"
 
   if grep -q '^dependencies:' "$chart_yaml"; then
+    # helm dependency build only knows repositories registered on this machine; CI starts with none.
+    for url in $(awk '$1 == "repository:" {print $2}' "$chart_yaml" | sort -u); do
+      helm repo add --force-update "dep-$(printf '%s' "$url" | sha1sum | cut -c1-8)" "$url"
+    done
     helm dependency build "$chart_dir"
   fi
 
