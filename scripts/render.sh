@@ -21,14 +21,17 @@ for chart_yaml in "$root"/charts/*/Chart.yaml; do
   fi
 
   for env in $environments; do
+    target="$out/apps/$chart/$env"
+    # The deploy repo's ApplicationSet expects apps/<chart>/<env> to exist for every environment.
+    mkdir -p "$target"
+    touch "$target/.gitkeep"
+
     values="$chart_dir/values-$env.yaml"
     if [ ! -f "$values" ]; then
       echo "skip $chart/$env: no values-$env.yaml"
       continue
     fi
 
-    target="$out/apps/$chart/$env"
-    mkdir -p "$target"
     # Drop previous output so templates removed from the chart disappear from the deploy repo.
     find "$target" -maxdepth 1 -name '*.yaml' -delete
     helm template "$chart" "$chart_dir" --namespace "$namespace" --include-crds -f "$values" > "$target/$chart.yaml"
