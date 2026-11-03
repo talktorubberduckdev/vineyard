@@ -1,0 +1,63 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Chart.Name }}
+  labels:
+    app: {{ .Chart.Name }}
+spec:
+  replicas: {{ .Values.replicas }}
+  selector:
+    matchLabels:
+      app: {{ .Chart.Name }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Chart.Name }}
+    spec:
+      serviceAccountName: {{ .Chart.Name }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: {{ .Chart.Name }}
+          image: {{ .Values.image }}
+          command: ["/bin/sh", "/config/run.sh"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: config
+              mountPath: /config
+            - name: cluster-ca
+              mountPath: /opt/kafka/ca
+              readOnly: true
+            - name: kafka-token
+              mountPath: /var/run/secrets/tokens
+              readOnly: true
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ .Chart.Name }}
+            defaultMode: 0555
+        - name: cluster-ca
+          secret:
+            secretName: {{ .Values.rootCA.secretName }}
+            items:
+              - key: ca.crt
+                path: ca.crt
+        # Projected SA token: the credential the broker validates via the K8s OIDC/JWKS endpoint.
+        # Left at the default mode (0644): the token is owned by root but the image runs non-root,
+        # so a stricter 0600 would make it unreadable. Strimzi's "loose permissions" warning is
+        # benign here since a projected token is already isolated to this pod.
+        - name: kafka-token
+          projected:
+            sources:
+              - serviceAccountToken:
+                  audience: {{ .Values.kafka.tokenAudience }}
+                  expirationSeconds: 3600
+                  path: kafka-token

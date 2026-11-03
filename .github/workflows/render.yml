@@ -1,0 +1,58 @@
+name: Render charts
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'charts/**'
+      - 'scripts/render.sh'
+      - '.github/workflows/render.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One render at a time so pushes to the deploy repo never race each other.
+concurrency:
+  group: render-charts
+  cancel-in-progress: false
+
+env:
+  DEPLOY_REPO: talktorubberduckdev/platform-deploy-vineyard
+  DEPLOY_BRANCH: main
+
+jobs:
+  render:
+    name: Render and push to the deploy repo
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: azure/setup-helm@v4
+
+      # GITHUB_TOKEN cannot push to another repository; DEPLOY_REPO_TOKEN needs contents:write on it.
+      - name: Check out the deploy repo
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ env.DEPLOY_REPO }}
+          ref: ${{ env.DEPLOY_BRANCH }}
+          token: ${{ secrets.DEPLOY_REPO_TOKEN }}
+          path: deploy
+
+      - name: Render charts into apps/<chart>/<env>
+        run: ./scripts/render.sh deploy
+
+      - name: Commit and push
+        working-directory: deploy
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add apps
+          if git diff --cached --quiet; then
+            echo "No changes to push"
+            exit 0
+          fi
+          git commit -m "Render charts from ${GITHUB_REPOSITORY}@${GITHUB_SHA::7}"
+          git pull --rebase origin "${DEPLOY_BRANCH}"
+          git push origin "HEAD:${DEPLOY_BRANCH}"
